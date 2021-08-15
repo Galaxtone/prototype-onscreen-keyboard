@@ -2,11 +2,18 @@
 <html>
   <head>
     <meta charset="UTF-8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Keyboard</title>
+    <!-- On iDevices, the html tag is responsible for bounce dragging of-screen, which is annoying and makes this unusable -->
     <style>
+
 html {
   height: 100%;
+  overflow: hidden;
+  position: relative;
 }
+
 body {
   width: 100%;
   height: calc(100% - 400px);
@@ -105,18 +112,16 @@ body {
 }
 
 .output {
-  width: calc(100% - 150px);
-  height: calc(100% - 500px);
+  width: 100%;
+  height: 100%;
   position: absolute;
-  left: 75px;
-  top: 50px;
 
   resize: none;
 
-  border: dashed 2px black;
+  border: none;
 
   font-family: monospace;
-  font-size: 40px;
+  font-size: 24px;
 }
 
 .output:focus {
@@ -170,14 +175,108 @@ body {
     </div>
     <script>
 // Sandbox for good measure.
-(function() { try {
+(function() {
+var output;
+var index = 0;
+
+// Tracks only one touch and stops at simultaneous touchs.
+// Touch takes priority over mouse, can't use mouse during a touch.
+var is_touching = false;
+
+document.addEventListener("touchend", function(event) {
+  is_touching = false;
+});
+
+document.addEventListener("touchcancel", function(event) {
+  is_touching = false;
+});
+
+
+var last_touch;
+var touch_elem_map = new Map();
+function add_event(elem, event, listener) {
+  if (event == "mousedown" || event == "mousemove" || event == "mouseup") {
+    var touch_elem = touch_elem_map.get(elem);
+    if (!touch_elem_map.has(elem)) {
+      touch_elem = {};
+      touch_elem_map.set(elem, touch_elem);
+
+      elem.addEventListener("touchstart", function(event) {
+        if (!is_touching) {
+          if (event.changedTouches.length != 1) {
+            return;
+          }
+          var touch = event.changedTouches[0];
+          is_touching = true;
+          last_touch = touch;
+          if (touch_elem.mousedown) {
+            return touch_elem.mousedown(touch);
+          }
+        }
+      });
+    }
+    
+    if (event == "mousedown") {
+      if (touch_elem.mousedown) {
+        throw new Error("Registered more than one mousedown event listener!");
+      }
+      // Error because this silently drops the last listener if it exists and replaces it.
+      touch_elem.mousedown = listener;
+    } else if (event == "mousemove") {
+      if (touch_elem.mousemove) {
+        throw new Error("Registered more than one mousemove event listener!");
+      }
+      if (!touch_elem.mousemove) {
+        elem.addEventListener("touchmove", function(event) {
+          if (event.changedTouches.length != 1) {
+            is_touching = false;
+            if (touch_elem.mouseup) {
+              return touch_elem.mouseup(last_touch);
+            }
+          } else {
+            last_touch = event.changedTouches[0];
+            if (touch_elem.mousemove) {
+              return touch_elem.mousemove(last_touchtouch);
+            }
+          }
+        });
+      }
+      // Error because this silently drops the last listener if it exists and replaces it.
+      touch_elem.mousemove = listener;
+    } else if (event == "mouseup") {
+      if (touch_elem.mouseup) {
+        throw new Error("Registered more than one mouseup event listener!");
+      }
+      if (!touch_elem.mouseup) {
+        elem.addEventListener("touchend", function(event) {
+          if (event.changedTouches.length == 1) {
+            last_touch = event.changedTouches[0];
+          }
+          if (touch_elem.mouseup) {
+            return touch_elem.mouseup(last_touch);
+          }
+        });
+      }
+      // Error because this silently drops the last listener if it exists and replaces it.
+      touch_elem.mouseup = listener;
+    }
+
+    elem.addEventListener(event, function(event) {
+      if (!is_touching) {
+        return listener(event);
+      }
+    });
+  } else {
+    elem.addEventListener(event, listener);
+  }
+}
 
 var keys = document.getElementById("keys");
 var keys_scroll_width = 0;
 
 var names = ["Adam", "Adams", "Anita", "Beasley", "Beatrice", "Bethany", "Booker", "Bradford", "Buchanan", "Calhoun", "Campbell", "Cassie", "Cobb", "Daily", "Darlene", "Drew", "Dudley", "Dwayne", "Emery", "Ernie", "Frederick", "Frye", "Gale", "Gentry", "Gilmore", "Goodwin", "Greer", "Hill", "Holloway", "Hutchinson", "Irvin", "Israel", "Jana", "Jayne", "Jeanne", "Jeff", "Jo", "Joanne", "Karla", "Katie", "Katz", "Kendra", "Kenny", "Leach", "Leblanc", "Leonard", "Les", "Lonnie", "Lorraine", "Mack", "Marianne", "Marina", "Mattie", "McPherson", "Melanie", "Morton", "Nash", "Nicholas", "O'Connell", "Olson", "Oscar", "Owens", "Parks", "Pearson", "Philip", "Randall", "Rhonda", "Riddle", "Robbie", "Rod", "Roman", "Rowland", "Saunders", "Tabitha", "Tyrone", "Wade", "Walker", "Whitney", "Wilkinson", "Wilson"];
 
-var output = document.getElementById("output");
+output = document.getElementById("output");
 output.textContent += "\u2190";
 function on_key_press(key_pressed) {
   output.textContent = output.textContent.slice(0, -1);
@@ -199,19 +298,19 @@ var key_pressed;
 var key_map = {};
 function add_key_handler(key) {
   key_map[key.textContent] = key;
-  key.addEventListener("mouseenter", function() {
+  add_event(key, "mouseenter", function() {
     key.classList.add("key_hover");
   });
-  key.addEventListener("mouseleave", function() {
+  add_event(key, "mouseleave", function() {
     key.classList.remove("key_hover");
   });
-  key.addEventListener("mousedown", function() {
+  add_event(key, "mousedown", function() {
     event.preventDefault();
     key_is_held = true;
     key_pressed = key.textContent;
     key.classList.add("key_pressed");
   });
-  key.addEventListener("mouseup", function() {
+  add_event(key, "mouseup", function() {
     if (key_is_held && key_pressed == key.textContent) {
       key_is_held = false;
       key.classList.remove("key_pressed");
@@ -279,7 +378,7 @@ var keys_width = keys_container.getBoundingClientRect().width;
 var temp_keys_width = keys_width;
 
 var keyboard = document.getElementById("keyboard");
-keyboard.addEventListener("selectstart", function(event) {
+add_event(keyboard, "selectstart", function(event) {
   event.preventDefault();
 });
 
@@ -295,12 +394,11 @@ var neg_delta;
 // This might come in handy. Direction of last movement. True = Right, False = Left.
 var keys_scroll_right = false;
 var keys_may_held = false;
-keys.addEventListener("mousedown", function(event) {
-  event.preventDefault();
+add_event(keys, "mousedown", function(event) {
   keys_may_held = true;
 });
 
-document.addEventListener("mousemove", function(event) {
+add_event(document, "mousemove", function(event) {
   if (keys_may_held) {
     var client_x = (event.clientX * mouse_speed_mul) | 0;
     keys_neg_offset_x = temp_keys_neg_scroll_x - client_x;
@@ -333,19 +431,19 @@ document.addEventListener("mousemove", function(event) {
   }
 });
 
-document.addEventListener("mouseup", function(event) {
+add_event(document, "mouseup", function(event) {
   keys_is_held = false;
   keys_may_held = false;
 });
 
-window.addEventListener("resize", function() {
+add_event(window, "resize", function() {
   temp_keys_width = keys_container.getBoundingClientRect().width;
   temp_keys_neg_scroll_x = keys_neg_scroll_x + Math.floor((temp_keys_width - keys_width) / 2);
   temp_keys_neg_scroll_x = Math.min(Math.max(temp_keys_neg_scroll_x, temp_keys_width - keys_scroll_width), 0);
   keys.style.left = temp_keys_neg_scroll_x + "px";
 });
 
-} catch(error) { alert("Error!"); console.error(error); } })();
+})();
     </script>
   </body>
 </html>
